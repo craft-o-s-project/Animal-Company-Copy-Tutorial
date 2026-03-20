@@ -27,33 +27,8 @@ DEFAULT_AVATAR_INVENTORY = json.dumps({
 
 DEFAULT_RESEARCH = json.dumps({
     'nodes': [
-        'node_arrow', 'node_arrow_heart', 'node_arrow_lightbulb',
-        'node_backpack', 'node_backpack_large', 'node_backpack_large_basketball',
-        'node_backpack_large_clover', 'node_balloon', 'node_balloon_heart',
-        'node_baseball_bat', 'node_boxfan', 'node_clapper', 'node_cluster_grenade',
-        'node_company_ration', 'node_crossbow', 'node_crossbow_heart',
-        'node_crowbar', 'node_disposable_camera', 'node_dynamite',
-        'node_dynamite_cube', 'node_flaregun', 'node_flashbang',
-        'node_flashlight_mega', 'node_football', 'node_frying_pan',
-        'node_glowsticks', 'node_heart_gun', 'node_hookshot', 'node_hoverpad',
-        'node_impact_grenade', 'node_impulse_grenade', 'node_item_nut_shredder',
-        'node_jetpack', 'node_lance', 'node_mega_broccoli', 'node_mini_broccoli',
-        'node_ogre_hands', 'node_pickaxe', 'node_pickaxe_cny', 'node_pickaxe_cube',
-        'node_plunger', 'node_pogostick', 'node_police_baton', 'node_quiver',
-        'node_quiver_heart', 'node_revolver', 'node_revolver_ammo', 'node_rpg',
-        'node_rpg_ammo', 'node_rpg_cny', 'node_saddle', 'node_shield',
-        'node_shield_bones', 'node_shield_police', 'node_shotgun',
-        'node_shotgun_ammo', 'node_skill_backpack_cap_1', 'node_skill_backpack_cap_2',
-        'node_skill_backpack_cap_3', 'node_skill_explosive_1',
-        'node_skill_gundamage_1', 'node_skill_health_1', 'node_skill_health_2',
-        'node_skill_left_hip_attachment', 'node_skill_melee_1',
-        'node_skill_melee_2', 'node_skill_melee_3',
-        'node_skill_right_hip_attachment', 'node_skill_selling_1',
-        'node_skill_selling_2', 'node_skill_selling_3', 'node_stick_armbones',
-        'node_stick_bone', 'node_sticker_dispenser', 'node_sticky_dynamite',
-        'node_tablet', 'node_teleport_grenade', 'node_theramin',
-        'node_tripwire_explosive', 'node_umbrella', 'node_umbrella_clover',
-        'node_whoopie', 'node_zipline_gun', 'node_zipline_rope'
+        'node_backpack', 'node_skill_left_hip_attachment', 'node_skill_right_hip_attachment', 'node_crowbar'
+
     ]
 })
 
@@ -63,7 +38,7 @@ DEFAULT_GAMEPLAY_PREFS = json.dumps({
         'item_glowstick', 'item_jetpack', 'item_stick_bone',
         'item_dynamite_cube', 'item_tablet', 'item_plunger', 'item_flashlight_mega'
     ],
-    'favorites': ['item_flaregun']
+    'favorites': ['item_stick', 'item_crowbar', 'item_backpack', 'item_flashlight']
 })
 
 DEFAULT_AVATAR_JSON = json.dumps({
