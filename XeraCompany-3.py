@@ -387,7 +387,7 @@ def generate_gameplay_loadout():
 # ---------------------------------------------------------------------------
 
 CLIENT_BOOTSTRAP_RESPONSE = {
-    'payload': '{"updateType":"Optional","attestResult":"Valid","attestTokenExpiresAt":1820877961,"photonAppID":"xxxxxx","photonVoiceAppID":"xxxxxx","termsAcceptanceNeeded":[],"dailyMissionDateKey":"","dailyMissions":null,"dailyMissionResetTime":0,"serverTimeUnix":1720877961,"gameDataURL":"https://xeracompany.pythonanywhere.com/game-data-prod.zip}'
+    'payload': '{"updateType":"Optional","attestResult":"Valid","attestTokenExpiresAt":1820877961,"photonAppID":"","photonVoiceAppID":"","termsAcceptanceNeeded":[],"dailyMissionDateKey":"","dailyMissions":null,"dailyMissionResetTime":0,"serverTimeUnix":1720877961,"gameDataURL":"https://xeracompany.pythonanywhere.com/game-data-prod.zip}'
 }
 
 ECON_ITEMS_RESPONSE = {
@@ -448,7 +448,7 @@ def serve_game_data():
     client_ip = request.remote_addr
     print(f"Request from IP: {client_ip}")
     file_name = 'ram.zip'
-    file_path = os.path.join('catalog', file_name)   # FIX 2: 'catalog\'' was an unterminated string
+    file_path = os.path.join('catalog/', file_name)   # FIX 2: 'catalog\'' was an unterminated string
     if not os.path.exists(file_path):
         print(f"File not found: {file_path}")
         return 'File not found', 404
