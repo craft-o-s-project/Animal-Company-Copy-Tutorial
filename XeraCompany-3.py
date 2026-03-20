@@ -1,145 +1,372 @@
-# I obfuscated it a bit so you can edit it just not skid
-# too bad if you were here for shit to skid!
+import tkinter as tk
+from tkinter import ttk, messagebox, scrolledtext
+import threading
 
-# Change AppID's and paths obviously or it wont work
+# ---------------------------------------------------------------------------
+# Admin GUI
+# ---------------------------------------------------------------------------
+
+class AdminGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Xera Backend Admin")
+        self.root.geometry("1000x700")
+        self.root.configure(bg='#1e1e2e')
+
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TFrame',       background='#1e1e2e')
+        style.configure('TLabel',       background='#1e1e2e', foreground='#cdd6f4', font=('Consolas', 10))
+        style.configure('TButton',      background='#313244', foreground='#cdd6f4', font=('Consolas', 10), borderwidth=0, padding=6)
+        style.map('TButton',            background=[('active', '#45475a')])
+        style.configure('TEntry',       fieldbackground='#313244', foreground='#cdd6f4', insertcolor='#cdd6f4', font=('Consolas', 10))
+        style.configure('TNotebook',    background='#1e1e2e', borderwidth=0)
+        style.configure('TNotebook.Tab',background='#313244', foreground='#cdd6f4', font=('Consolas', 10), padding=[10, 4])
+        style.map('TNotebook.Tab',      background=[('selected', '#45475a')])
+        style.configure('Treeview',     background='#313244', foreground='#cdd6f4', fieldbackground='#313244', font=('Consolas', 10), rowheight=24)
+        style.configure('Treeview.Heading', background='#45475a', foreground='#cdd6f4', font=('Consolas', 10, 'bold'))
+        style.map('Treeview',           background=[('selected', '#585b70')])
+
+        # Notebook tabs
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+
+        self.tab_users    = ttk.Frame(notebook)
+        self.tab_currency = ttk.Frame(notebook)
+        self.tab_bans     = ttk.Frame(notebook)
+        self.tab_logs     = ttk.Frame(notebook)
+
+        notebook.add(self.tab_users,    text='👥  Users')
+        notebook.add(self.tab_currency, text='💰  Currency')
+        notebook.add(self.tab_bans,     text='🔨  Bans')
+        notebook.add(self.tab_logs,     text='📋  Logs')
+
+        self._build_users_tab()
+        self._build_currency_tab()
+        self._build_bans_tab()
+        self._build_logs_tab()
+
+        self.refresh_users()
+        self.log("Admin GUI started.")
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    def log(self, message):
+        timestamp = time.strftime('%H:%M:%S')
+        self.logs_box.configure(state='normal')
+        self.logs_box.insert('end', f"[{timestamp}] {message}\n")
+        self.logs_box.see('end')
+        self.logs_box.configure(state='disabled')
+
+    def _label_entry_row(self, parent, label, row, default=''):
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky='w', padx=8, pady=4)
+        var = tk.StringVar(value=default)
+        entry = ttk.Entry(parent, textvariable=var, width=30)
+        entry.grid(row=row, column=1, sticky='w', padx=8, pady=4)
+        return var
+
+    def _colored_button(self, parent, text, color, command, row, col, colspan=1):
+        btn = tk.Button(
+            parent, text=text, command=command,
+            bg=color, fg='#cdd6f4', font=('Consolas', 10),
+            relief='flat', padx=8, pady=6, cursor='hand2',
+            activebackground='#45475a', activeforeground='#cdd6f4'
+        )
+        btn.grid(row=row, column=col, columnspan=colspan, sticky='w', padx=8, pady=4)
+        return btn
+
+    def _get_user_by_username(self, username):
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute('SELECT ip, username, custom_id, create_time FROM users WHERE username = ?', (username,))
+        row = cur.fetchone()
+        conn.close()
+        return row  # (ip, username, custom_id, create_time)
+
+    # -----------------------------------------------------------------------
+    # Users Tab
+    # -----------------------------------------------------------------------
+
+    def _build_users_tab(self):
+        frame = self.tab_users
+
+        cols = ('Username', 'IP', 'Custom ID', 'Created')
+        self.users_tree = ttk.Treeview(frame, columns=cols, show='headings', selectmode='browse')
+        for col in cols:
+            self.users_tree.heading(col, text=col)
+            self.users_tree.column(col, width=200 if col != 'Created' else 160)
+        self.users_tree.pack(fill='both', expand=True, padx=10, pady=(10, 4))
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=10, pady=4)
+        self._colored_button(btn_frame, '🔄 Refresh',      '#313244', self.refresh_users,  0, 0)
+        self._colored_button(btn_frame, '🗑 Delete User',  '#f38ba8', self.delete_user,    0, 1)
+
+    def refresh_users(self):
+        for row in self.users_tree.get_children():
+            self.users_tree.delete(row)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute('SELECT username, ip, custom_id, create_time FROM users')
+        for row in cur.fetchall():
+            username, ip, custom_id, create_time = row
+            created = time.strftime('%Y-%m-%d %H:%M', time.localtime(create_time))
+            self.users_tree.insert('', 'end', values=(username, ip, custom_id, created))
+        conn.close()
+        self.log("Users list refreshed.")
+
+    def delete_user(self):
+        selected = self.users_tree.focus()
+        if not selected:
+            messagebox.showwarning("No Selection", "Select a user first.")
+            return
+        values = self.users_tree.item(selected, 'values')
+        username, ip = values[0], values[1]
+        if not messagebox.askyesno("Confirm", f"Delete user '{username}' ({ip})?"):
+            return
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute('DELETE FROM users WHERE ip = ?', (ip,))
+        cur.execute('DELETE FROM user_data WHERE custom_id = ?', (values[2],))
+        conn.commit()
+        conn.close()
+        self.log(f"Deleted user '{username}' ({ip}).")
+        self.refresh_users()
+
+    # -----------------------------------------------------------------------
+    # Currency Tab
+    # -----------------------------------------------------------------------
+
+    def _build_currency_tab(self):
+        frame = self.tab_currency
+
+        ttk.Label(frame, text="Target Username:", font=('Consolas', 11, 'bold')).grid(
+            row=0, column=0, sticky='w', padx=8, pady=(12, 4))
+
+        self.currency_username = self._label_entry_row(frame, 'Username:', 1)
+        self.currency_amount   = self._label_entry_row(frame, 'Amount:',   2, default='0')
+
+        ttk.Label(frame, text="Currency Type:", ).grid(row=3, column=0, sticky='w', padx=8, pady=4)
+        self.currency_type = tk.StringVar(value='soft_currency')
+        currency_menu = ttk.Combobox(frame, textvariable=self.currency_type, width=28, state='readonly')
+        currency_menu['values'] = ('soft_currency', 'hard_currency', 'research_points')
+        currency_menu.grid(row=3, column=1, sticky='w', padx=8, pady=4)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=4, column=0, columnspan=2, sticky='w', padx=4, pady=8)
+        self._colored_button(btn_frame, '➕ Add',      '#a6e3a1', self.currency_add,      0, 0)
+        self._colored_button(btn_frame, '➖ Subtract', '#fab387', self.currency_subtract,  0, 1)
+        self._colored_button(btn_frame, '🎁 Set',      '#89b4fa', self.currency_set,       0, 2)
+        self._colored_button(btn_frame, '🔍 View',     '#313244', self.currency_view,      0, 3)
+
+        # Info display
+        self.currency_info = tk.Text(frame, height=6, bg='#313244', fg='#cdd6f4',
+                                     font=('Consolas', 10), relief='flat', state='disabled')
+        self.currency_info.grid(row=5, column=0, columnspan=2, sticky='ew', padx=8, pady=8)
+        frame.columnconfigure(1, weight=1)
+
+    def _currency_get_user(self):
+        username = self.currency_username.get().strip()
+        if not username:
+            messagebox.showwarning("Missing", "Enter a username.")
+            return None, None
+        row = self._get_user_by_username(username)
+        if not row:
+            messagebox.showerror("Not Found", f"No user '{username}' found.")
+            return None, None
+        return row[0], row[2]  # ip, custom_id
+
+    def currency_add(self):
+        ip, custom_id = self._currency_get_user()
+        if not custom_id: return
+        try:
+            amount = int(self.currency_amount.get())
+            field  = self.currency_type.get()
+            data   = get_user_data(custom_id)
+            save_user_data(custom_id, field, data[field] + amount)
+            self.log(f"Added {amount} {field} to '{self.currency_username.get()}'.")
+            self.currency_view()
+        except ValueError:
+            messagebox.showerror("Error", "Amount must be an integer.")
+
+    def currency_subtract(self):
+        ip, custom_id = self._currency_get_user()
+        if not custom_id: return
+        try:
+            amount = int(self.currency_amount.get())
+            field  = self.currency_type.get()
+            data   = get_user_data(custom_id)
+            new_val = max(0, data[field] - amount)
+            save_user_data(custom_id, field, new_val)
+            self.log(f"Subtracted {amount} {field} from '{self.currency_username.get()}'. New value: {new_val}.")
+            self.currency_view()
+        except ValueError:
+            messagebox.showerror("Error", "Amount must be an integer.")
+
+    def currency_set(self):
+        ip, custom_id = self._currency_get_user()
+        if not custom_id: return
+        try:
+            amount = int(self.currency_amount.get())
+            field  = self.currency_type.get()
+            save_user_data(custom_id, field, amount)
+            self.log(f"Set {field} to {amount} for '{self.currency_username.get()}'.")
+            self.currency_view()
+        except ValueError:
+            messagebox.showerror("Error", "Amount must be an integer.")
+
+    def currency_view(self):
+        ip, custom_id = self._currency_get_user()
+        if not custom_id: return
+        data = get_user_data(custom_id)
+        text = (
+            f"  Username:        {self.currency_username.get()}\n"
+            f"  Custom ID:       {custom_id}\n"
+            f"  Soft Currency:   {data['soft_currency']:,}\n"
+            f"  Hard Currency:   {data['hard_currency']:,}\n"
+            f"  Research Points: {data['research_points']:,}\n"
+            f"  Stash:           {data['stash_cols']}x{data['stash_rows']}"
+        )
+        self.currency_info.configure(state='normal')
+        self.currency_info.delete('1.0', 'end')
+        self.currency_info.insert('end', text)
+        self.currency_info.configure(state='disabled')
+        self.log(f"Viewed currency for '{self.currency_username.get()}'.")
+
+    # -----------------------------------------------------------------------
+    # Bans Tab
+    # -----------------------------------------------------------------------
+
+    def _build_bans_tab(self):
+        frame = self.tab_bans
+
+        # Active bans list
+        ttk.Label(frame, text="Active Bans:", font=('Consolas', 11, 'bold')).grid(
+            row=0, column=0, columnspan=2, sticky='w', padx=8, pady=(12, 2))
+
+        cols = ('IP', 'Reason', 'Expires')
+        self.bans_tree = ttk.Treeview(frame, columns=cols, show='headings', height=6, selectmode='browse')
+        for col in cols:
+            self.bans_tree.heading(col, text=col)
+            self.bans_tree.column('IP',      width=160)
+            self.bans_tree.column('Reason',  width=260)
+            self.bans_tree.column('Expires', width=180)
+        self.bans_tree.grid(row=1, column=0, columnspan=2, sticky='ew', padx=8, pady=4)
+
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=0, columnspan=2, sticky='ew', padx=8, pady=8)
+
+        # Ban controls
+        ttk.Label(frame, text="Ban a User:", font=('Consolas', 11, 'bold')).grid(
+            row=3, column=0, sticky='w', padx=8, pady=(4, 2))
+
+        self.ban_username = self._label_entry_row(frame, 'Username:',  4)
+        self.ban_reason   = self._label_entry_row(frame, 'Reason:',    5, default='Cheating')
+        self.ban_hours    = self._label_entry_row(frame, 'Hours (0=permanent):', 6, default='24')
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.grid(row=7, column=0, columnspan=2, sticky='w', padx=4, pady=8)
+        self._colored_button(btn_frame, '🔨 Ban User',   '#f38ba8', self.do_ban,          0, 0)
+        self._colored_button(btn_frame, '✅ Unban',       '#a6e3a1', self.do_unban,         0, 1)
+        self._colored_button(btn_frame, '🔄 Refresh',    '#313244', self.refresh_bans,     0, 2)
+
+        frame.columnconfigure(1, weight=1)
+        self.refresh_bans()
+
+    def refresh_bans(self):
+        for row in self.bans_tree.get_children():
+            self.bans_tree.delete(row)
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute('SELECT ip, reason, banned_until FROM banned_ips')
+        for row in cur.fetchall():
+            ip, reason, banned_until = row
+            expires = 'Permanent' if banned_until == 0 else time.strftime('%Y-%m-%d %H:%M', time.localtime(banned_until))
+            self.bans_tree.insert('', 'end', values=(ip, reason, expires))
+        conn.close()
+        self.log("Bans list refreshed.")
+
+    def do_ban(self):
+        username = self.ban_username.get().strip()
+        reason   = self.ban_reason.get().strip() or 'No reason provided'
+        if not username:
+            messagebox.showwarning("Missing", "Enter a username.")
+            return
+        try:
+            hours = float(self.ban_hours.get())
+        except ValueError:
+            messagebox.showerror("Error", "Hours must be a number.")
+            return
+
+        row = self._get_user_by_username(username)
+        if not row:
+            messagebox.showerror("Not Found", f"No user '{username}' found.")
+            return
+
+        ip = row[0]
+        ban_user(ip, reason=reason, hours=hours)
+        label = 'permanently' if hours == 0 else f'for {hours} hours'
+        self.log(f"Banned '{username}' ({ip}) {label}. Reason: {reason}")
+        self.refresh_bans()
+
+    def do_unban(self):
+        # Try selected from tree first
+        selected = self.bans_tree.focus()
+        if selected:
+            ip = self.bans_tree.item(selected, 'values')[0]
+        else:
+            username = self.ban_username.get().strip()
+            if not username:
+                messagebox.showwarning("Missing", "Select a ban or enter a username.")
+                return
+            row = self._get_user_by_username(username)
+            if not row:
+                messagebox.showerror("Not Found", f"No user '{username}' found.")
+                return
+            ip = row[0]
+
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute('DELETE FROM banned_ips WHERE ip = ?', (ip,))
+        conn.commit()
+        conn.close()
+        self.log(f"Unbanned IP: {ip}")
+        self.refresh_bans()
+
+    # -----------------------------------------------------------------------
+    # Logs Tab
+    # -----------------------------------------------------------------------
+
+    def _build_logs_tab(self):
+        frame = self.tab_logs
+
+        self.logs_box = scrolledtext.ScrolledText(
+            frame, state='disabled', bg='#181825', fg='#a6e3a1',
+            font=('Consolas', 10), relief='flat', wrap='word'
+        )
+        self.logs_box.pack(fill='both', expand=True, padx=10, pady=10)
+
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=10, pady=(0, 6))
+        self._colored_button(btn_frame, '🗑 Clear Logs', '#f38ba8', self.clear_logs, 0, 0)
+
+    def clear_logs(self):
+        self.logs_box.configure(state='normal')
+        self.logs_box.delete('1.0', 'end')
+        self.logs_box.configure(state='disabled')
 
 
-M=str
-L=dict
-G=Exception
-E=print
-from flask import Flask,request as C,jsonify as A,send_file as Z
-import requests as N,json as D,ipaddress as I,secrets as F,base64 as a,time as O,sqlite3 as P,random as H,os,string as Q
-R=True
-S='/home/XeraCompany/mysite/userdata.db'
-def b():conn=P.connect(S);cur=conn.cursor();cur.execute('\n        CREATE TABLE IF NOT EXISTS users (\n            ip TEXT PRIMARY KEY,\n            username TEXT NOT NULL,\n            custom_id TEXT NOT NULL,\n            create_time REAL NOT NULL\n        )\n    ');cur.execute('\n        CREATE TABLE IF NOT EXISTS banned_ips (\n            ip TEXT PRIMARY KEY\n        )\n    ');conn.commit();conn.close()
-B=Flask(__name__)
-b()
-@B.after_request
-def i(response):
-	method=C.method;url=C.url;path=C.path;headers=L(C.headers);body=C.get_data(as_text=True);query_params=L(C.args);status_code=response.status_code;is_handled=status_code!=404;message={'content':f"📡 **Request to: {path}**",'embeds':[{'title':'Request Details','fields':[{'name':'Method','value':method,'inline':True},{'name':'Path','value':path,'inline':True},{'name':'Status Code','value':M(status_code),'inline':True},{'name':'Full URL','value':url,'inline':False},{'name':'Query Params','value':f"```json\n{D.dumps(query_params,indent=2)}```"if query_params else'*(none)*','inline':False},{'name':'Headers','value':f"```json\n{D.dumps(headers,indent=2)}```",'inline':False},{'name':'Body','value':f"```json\n{body}```"if body else'*(empty)*','inline':False}],'color':65280 if status_code<400 else 16711680}]}
-	try:N.post(Y,json=message)
-	except G as e:pass
-	return response
-def c():return'Xera+'+''.join(H.choices(Q.ascii_uppercase,k=6))
-def T():
-	try:
-		with open('/home/XeraCompany/mysite/econ_gameplay_items.json','r')as f:data=D.load(f)
-		item_ids=[item['id']for item in data if'id'in item]
-	except G as e:E(f"Failed to load econ_gameplay_items.json: {e}");item_ids=['item_jetpack','item_flaregun','item_dynamite','item_tablet','item_flashlight_mega','item_plunger','item_crossbow','item_revolver','item_shotgun','item_pickaxe']
-	children=[]
-	for _ in range(20):
-		if H.random()<.7 and'item_arena_pistol'in item_ids:selected_item='item_arena_pistol'
-		else:selected_item=H.choice(item_ids)
-		children.append({'itemID':selected_item,'scaleModifier':100,'colorHue':H.randint(10,111),'colorSaturation':H.randint(10,111)})
-	payload={'objects':[{'collection':'user_inventory','key':'gameplay_loadout','permission_read':1,'permission_write':1,'value':D.dumps({'version':1,'back':{'itemID':'item_backpack_large_base','scaleModifier':120,'colorHue':50,'colorSaturation':50,'children':children}})}]};return payload
-def J(ip_address):
-	try:
-		trusted_public_ips={'OWNER IP WAS HERE','OWNER IP'}
-		if ip_address in trusted_public_ips:return True
-		ip=I.ip_address(ip_address)
-		if ip.version==4:return ip in I.IPv4Network('1XXXXX1.0/24')or ip in I.IPv4Network('1XXXXX8/29')
-		return ip in I.IPv6Network('2600:4040:303c:5b00::/64')
-	except ValueError:return False
-def d():return''.join(H.choices(Q.digits,k=17))
-def f():return C.headers.get('X-Forwarded-For',C.remote_addr)
-def g(ip):
-	conn=P.connect(S);cur=conn.cursor();cur.execute('SELECT 1 FROM banned_ips WHERE ip = ?',(ip,))
-	if cur.fetchone():conn.close();return None,True
-	cur.execute('SELECT username, custom_id FROM users WHERE ip = ?',(ip,));result=cur.fetchone()
-	if result:username,custom_id=result
-	else:
-		if ip=='127.0.0.1':username='<color=red>0x11'
-		else:username=c()
-		custom_id=d();cur.execute('INSERT INTO users (ip, username, custom_id, create_time) VALUES (?, ?, ?, ?)',(ip,username,custom_id,O.time()));conn.commit()
-	conn.close();return{'username':username,'custom_id':custom_id},False
-def U(user_id):
-	header={'alg':'HS256','typ':'JWT'};now=int(O.time());payload={'tid':F.token_hex(16),'uid':user_id,'usn':F.token_hex(5),'vrs':{'authID':F.token_hex(20),'clientUserAgent':'MetaQuest 1.16.3.1138_5edcbd98','deviceID':F.token_hex(20),'loginType':'meta_quest'},'exp':now+72000,'iat':now}
-	def b64encode(obj):return a.urlsafe_b64encode(D.dumps(obj).encode()).decode().rstrip('=')
-	signature=F.token_urlsafe(32);return f"{b64encode(header)}.{b64encode(payload)}.{signature}"
-def V():user_id=F.token_hex(16);return{'token':U(user_id),'refresh_token':U(user_id)}
-e={'payload':'{"updateType":"Optional","attestResult":"Valid","attestTokenExpiresAt":1820877961,"photonAppID":"xxxxxx","photonVoiceAppID":"xxxxxx","termsAcceptanceNeeded":[],"dailyMissionDateKey":"","dailyMissions":null,"dailyMissionResetTime":0,"serverTimeUnix":1720877961,"gameDataURL":"https://xeracompany.pythonanywhere.com/game-data-prod.zip}'}
-h={'payload':'[{"id":"item_apple","netID":71,"name":"Apple","description":"An apple a day keeps the doctor away!","category":"Consumables","price":200,"value":7,"isLoot":true,"isPurchasable":false,"isUnique":false,"isDevOnly":false},{"id":"item_arrow","netID":103,"name":"Arrow","description":"Can be attached to the crossbow.","category":"Ammo","price":199,"value":8,"isLoot":false,"isPurchasable":true,"isUnique":false,"isDevOnly":false},{"id":"item_arrow_heart","netID":116,"name":"Heart Arrow","description":"A love-themed arrow that will have your targets seeing hearts! ","category":"Ammo","price":199,"value":8,"isLoot":false,"isPurchasable":true,"isUnique":false,"isDevOnly":false} ... ]'}
-j={'payload':'{"serverTimeUnix":1720877961,"cachedExpiresAt":1820877961}'}
-K={'objects':[{'collection':'user_avatar','key':'0','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"butt": "bp_butt_gorilla", "head": "bp_head_gorilla", "tail": "", "torso": "bp_torso_gorilla", "armLeft": "bp_arm_l_gorilla", "eyeLeft": "bp_eye_gorilla", "armRight": "bp_arm_r_gorilla", "eyeRight": "bp_eye_gorilla", "accessories": ["acc_fit_varsityjacket"], "primaryColor": "604170"}','version':'7a326a2a4d0639a5f08e3116bb99a3bf','permission_read':2,'create_time':'2024-10-29T00:22:08Z','update_time':'2025-04-04T03:55:19Z'},{'collection':'user_inventory','key':'avatar','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"items": ["animal_gorilla", "bp_head_gorilla", "bp_eye_gorilla", "bp_torso_gorilla", "bp_arm_l_gorilla", "bp_arm_r_gorilla", "bp_butt_gorilla", "acc_fit_varsityjacket_black", "acc_fit_varsityjacket", "outfit_cube", "acc_fit_cubes", "acc_fit_head_cube", "animal_skeletongorilla"]}','version':'b6a38347a29ec461a06d5e30ed8b3cd8','permission_read':1,'create_time':'2024-10-29T00:22:08Z','update_time':'2025-04-05T06:21:14Z'},{'collection':'user_inventory','key':'research','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"nodes": ["node_arrow", "node_arrow_heart", "node_arrow_lightbulb", "node_backpack", "node_backpack_large", "node_backpack_large_basketball", "node_backpack_large_clover", "node_balloon", "node_balloon_heart", "node_baseball_bat", "node_boxfan", "node_clapper", "node_cluster_grenade", "node_company_ration", "node_crossbow", "node_crossbow_heart", "node_crowbar", "node_disposable_camera", "node_dynamite", "node_dynamite_cube", "node_flaregun", "node_flashbang", "node_flashlight_mega", "node_football", "node_frying_pan", "node_glowsticks", "node_heart_gun", "node_hookshot", "node_hoverpad", "node_impact_grenade", "node_impulse_grenade", "node_item_nut_shredder", "node_jetpack", "node_lance", "node_mega_broccoli", "node_mini_broccoli", "node_ogre_hands", "node_pickaxe", "node_pickaxe_cny", "node_pickaxe_cube", "node_plunger", "node_pogostick", "node_police_baton", "node_quiver", "node_quiver_heart", "node_revolver", "node_revolver_ammo", "node_rpg", "node_rpg_ammo", "node_rpg_cny", "node_saddle", "node_shield", "node_shield_bones", "node_shield_police", "node_shotgun", "node_shotgun_ammo", "node_skill_backpack_cap_1", "node_skill_backpack_cap_2", "node_skill_backpack_cap_3", "node_skill_explosive_1", "node_skill_gundamage_1", "node_skill_health_1", "node_skill_health_2", "node_skill_left_hip_attachment", "node_skill_melee_1", "node_skill_melee_2", "node_skill_melee_3", "node_skill_right_hip_attachment", "node_skill_selling_1", "node_skill_selling_2", "node_skill_selling_3", "node_stick_armbones", "node_stick_bone", "node_sticker_dispenser", "node_sticky_dynamite", "node_tablet", "node_teleport_grenade", "node_theramin", "node_tripwire_explosive", "node_umbrella", "node_umbrella_clover", "node_whoopie", "node_zipline_gun", "node_zipline_rope"]}','version':'bb49186ef5806541f461f4c9f3f4f871','permission_read':1,'create_time':'2025-02-20T00:51:38Z','update_time':'2025-02-20T01:15:06Z'},{'collection':'user_inventory','key':'stash','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"items": [{"itemID": "item_backpack_large_base", "colorHue": 202, "colorSaturation": 93, "scaleModifier": -91, "children": [{"itemID": "item_heart_gun", "colorHue": 142, "colorSaturation": -94, "scaleModifier": 108, "children": [{"itemID": "item_backpack_large_base", "colorHue": 122, "colorSaturation": 48, "scaleModifier": 111, "children": [{"itemID": "item_heart_gun", "colorHue": 236, "colorSaturation": -110, "scaleModifier": -110, "children": [{"itemID": "item_arena_pistol", "colorHue": 157, "colorSaturation": 10, "scaleModifier": -100}]}, {"itemID": "item_heart_gun", "colorHue": 179, "colorSaturation": 68, "scaleModifier": 66, "children": [{"itemID": "item_arena_pistol", "colorHue": 71, "colorSaturation": -69, "scaleModifier": -71}]}, {"itemID": "item_heart_gun", "colorHue": 111, "colorSaturation": -105, "scaleModifier": 21, "children": [{"itemID": "item_arena_pistol", "colorHue": 99, "colorSaturation": -46, "scaleModifier": -89}]}, {"itemID": "item_heart_gun", "colorHue": 213, "colorSaturation": 2, "scaleModifier": -120, "children": [{"itemID": "item_arena_pistol", "colorHue": 87, "colorSaturation": -23, "scaleModifier": -65}]}, {"itemID": "item_heart_gun", "colorHue": 86, "colorSaturation": -59, "scaleModifier": -27, "children": [{"itemID": "item_arena_pistol", "colorHue": 41, "colorSaturation": -99, "scaleModifier": -88}]}, {"itemID": "item_heart_gun", "colorHue": 224, "colorSaturation": 107, "scaleModifier": 4, "children": [{"itemID": "item_arena_pistol", "colorHue": 78, "colorSaturation": -39, "scaleModifier": 103}]}, {"itemID": "item_heart_gun", "colorHue": 129, "colorSaturation": -16, "scaleModifier": 103, "children": [{"itemID": "item_arena_pistol", "colorHue": 76, "colorSaturation": 77, "scaleModifier": 59}]}, {"itemID": "item_heart_gun", "colorHue": 168, "colorSaturation": 7, "scaleModifier": -74, "children": [{"itemID": "item_arena_pistol", "colorHue": 109, "colorSaturation": 42, "scaleModifier": 93}]}, {"itemID": "item_heart_gun", "colorHue": 21, "colorSaturation": 50, "scaleModifier": 17, "children": [{"itemID": "item_arena_pistol", "colorHue": 126, "colorSaturation": -23, "scaleModifier": -35}]}, {"itemID": "item_heart_gun", "colorHue": 81, "colorSaturation": -37, "scaleModifier": -88, "children": [{"itemID": "item_arena_pistol", "colorHue": 150, "colorSaturation": 117, "scaleModifier": 44}]}, {"itemID": "item_heart_gun", "colorHue": 143, "colorSaturation": 4, "scaleModifier": -106, "children": [{"itemID": "item_arena_pistol", "colorHue": 195, "colorSaturation": 26, "scaleModifier": -75}]}, {"itemID": "item_heart_gun", "colorHue": 152, "colorSaturation": 9, "scaleModifier": -41, "children": [{"itemID": "item_arena_pistol", "colorHue": 193, "colorSaturation": -46, "scaleModifier": 66}]}, {"itemID": "item_heart_gun", "colorHue": 236, "colorSaturation": -55, "scaleModifier": -19, "children": [{"itemID": "item_arena_pistol", "colorHue": 57, "colorSaturation": 85, "scaleModifier": -108}]}, {"itemID": "item_heart_gun", "colorHue": 102, "colorSaturation": -68, "scaleModifier": 113, "children": [{"itemID": "item_arena_pistol", "colorHue": 53, "colorSaturation": 4, "scaleModifier": -109}]}, {"itemID": "item_heart_gun", "colorHue": 61, "colorSaturation": 3, "scaleModifier": 115, "children": [{"itemID": "item_arena_pistol", "colorHue": 193, "colorSaturation": 118, "scaleModifier": 31}]}, {"itemID": "item_heart_gun", "colorHue": 185, "colorSaturation": 88, "scaleModifier": -25, "children": [{"itemID": "item_arena_pistol", "colorHue": 101, "colorSaturation": 2, "scaleModifier": -50}]}, {"itemID": "item_heart_gun", "colorHue": 23, "colorSaturation": 53, "scaleModifier": 84, "children": [{"itemID": "item_arena_pistol", "colorHue": 47, "colorSaturation": -55, "scaleModifier": -98}]}, {"itemID": "item_heart_gun", "colorHue": 35, "colorSaturation": 86, "scaleModifier": -28, "children": [{"itemID": "item_arena_pistol", "colorHue": 173, "colorSaturation": 1, "scaleModifier": 83}]}, {"itemID": "item_heart_gun", "colorHue": 20, "colorSaturation": 96, "scaleModifier": -49, "children": [{"itemID": "item_arena_pistol", "colorHue": 42, "colorSaturation": -93, "scaleModifier": -113}]}, {"itemID": "item_heart_gun", "colorHue": 56, "colorSaturation": 35, "scaleModifier": -14, "children": [{"itemID": "item_arena_pistol", "colorHue": 137, "colorSaturation": 102, "scaleModifier": -56}]}, {"itemID": "item_heart_gun", "colorHue": 203, "colorSaturation": -38, "scaleModifier": -7, "children": [{"itemID": "item_arena_pistol", "colorHue": 65, "colorSaturation": 49, "scaleModifier": 105}]}, {"itemID": "item_heart_gun", "colorHue": 130, "colorSaturation": 11, "scaleModifier": 35, "children": [{"itemID": "item_arena_pistol", "colorHue": 71, "colorSaturation": 97, "scaleModifier": 53}]}, {"itemID": "item_heart_gun", "colorHue": 2, "colorSaturation": 68, "scaleModifier": 119, "children": [{"itemID": "item_arena_pistol", "colorHue": 41, "colorSaturation": 50, "scaleModifier": -13}]}]}]}, {"itemID": "item_heart_gun", "colorHue": 95, "colorSaturation": -105, "scaleModifier": 94, "children": [{"itemID": "item_backpack_large_base", "colorHue": 77, "colorSaturation": 46, "scaleModifier": -14, "children": [{"itemID": "item_heart_gun", "colorHue": 231, "colorSaturation": -65, "scaleModifier": 65, "children": [{"itemID": "item_arena_pistol", "colorHue": 121, "colorSaturation": 40, "scaleModifier": 29}]}, {"itemID": "item_heart_gun", "colorHue": 101, "colorSaturation": 49, "scaleModifier": -44, "children": [{"itemID": "item_arena_pistol", "colorHue": 61, "colorSaturation": -72, "scaleModifier": 2}]}, {"itemID": "item_heart_gun", "colorHue": 19, "colorSaturation": -120, "scaleModifier": -5, "children": [{"itemID": "item_arena_pistol", "colorHue": 116, "colorSaturation": -32, "scaleModifier": 111}]}, {"itemID": "item_heart_gun", "colorHue": 77, "colorSaturation": 98, "scaleModifier": 2, "children": [{"itemID": "item_arena_pistol", "colorHue": 228, "colorSaturation": 68, "scaleModifier": -44}]}, {"itemID": "item_heart_gun", "colorHue": 132, "colorSaturation": -119, "scaleModifier": 105, "children": [{"itemID": "item_arena_pistol", "colorHue": 136, "colorSaturation": 47, "scaleModifier": 6}]}, {"itemID": "item_heart_gun", "colorHue": 131, "colorSaturation": -34, "scaleModifier": 113, "children": [{"itemID": "item_arena_pistol", "colorHue": 193, "colorSaturation": -39, "scaleModifier": -49}]}, {"itemID": "item_heart_gun", "colorHue": 201, "colorSaturation": 56, "scaleModifier": 111, "children": [{"itemID": "item_arena_pistol", "colorHue": 149, "colorSaturation": -73, "scaleModifier": -28}]}, {"itemID": "item_heart_gun", "colorHue": 140, "colorSaturation": 60, "scaleModifier": 56, "children": [{"itemID": "item_arena_pistol", "colorHue": 191, "colorSaturation": -59, "scaleModifier": 19}]}, {"itemID": "item_heart_gun", "colorHue": 115, "colorSaturation": 39, "scaleModifier": 21, "children": [{"itemID": "item_arena_pistol", "colorHue": 5, "colorSaturation": -19, "scaleModifier": -42}]}, {"itemID": "item_heart_gun", "colorHue": 171, "colorSaturation": -111, "scaleModifier": 8, "children": [{"itemID": "item_arena_pistol", "colorHue": 213, "colorSaturation": 19, "scaleModifier": -40}]}, {"itemID": "item_heart_gun", "colorHue": 198, "colorSaturation": 29, "scaleModifier": -115, "children": [{"itemID": "item_arena_pistol", "colorHue": 201, "colorSaturation": 63, "scaleModifier": 118}]}, {"itemID": "item_heart_gun", "colorHue": 26, "colorSaturation": 105, "scaleModifier": 43, "children": [{"itemID": "item_arena_pistol", "colorHue": 53, "colorSaturation": 98, "scaleModifier": 53}]}, {"itemID": "item_heart_gun", "colorHue": 62, "colorSaturation": -6, "scaleModifier": 104, "children": [{"itemID": "item_arena_pistol", "colorHue": 9, "colorSaturation": -29, "scaleModifier": -30}]}, {"itemID": "item_heart_gun", "colorHue": 23, "colorSaturation": -102, "scaleModifier": 48, "children": [{"itemID": "item_arena_pistol", "colorHue": 40, "colorSaturation": -26, "scaleModifier": 97}]}, {"itemID": "item_heart_gun", "colorHue": 181, "colorSaturation": -96, "scaleModifier": 11, "children": [{"itemID": "item_arena_pistol", "colorHue": 105, "colorSaturation": -80, "scaleModifier": -44}]}, {"itemID": "item_heart_gun", "colorHue": 132, "colorSaturation": 82, "scaleModifier": -93, "children": [{"itemID": "item_arena_pistol", "colorHue": 163, "colorSaturation": 75, "scaleModifier": -53}]}, {"itemID": "item_heart_gun", "colorHue": 52, "colorSaturation": 65, "scaleModifier": -93, "children": [{"itemID": "item_arena_pistol", "colorHue": 70, "colorSaturation": 107, "scaleModifier": -90}]}, {"itemID": "item_heart_gun", "colorHue": 172, "colorSaturation": 102, "scaleModifier": -61, "children": [{"itemID": "item_arena_pistol", "colorHue": 40, "colorSaturation": 39, "scaleModifier": 113}]}, {"itemID": "item_heart_gun", "colorHue": 109, "colorSaturation": 77, "scaleModifier": -124, "children": [{"itemID": "item_arena_pistol", "colorHue": 74, "colorSaturation": -18, "scaleModifier": -98}]}, {"itemID": "item_heart_gun", "colorHue": 135, "colorSaturation": -50, "scaleModifier": -64, "children": [{"itemID": "item_arena_pistol", "colorHue": 217, "colorSaturation": 83, "scaleModifier": -95}]}, {"itemID": "item_heart_gun", "colorHue": 50, "colorSaturation": -66, "scaleModifier": 18, "children": [{"itemID": "item_arena_pistol", "colorHue": 142, "colorSaturation": 63, "scaleModifier": 82}]}, {"itemID": "item_heart_gun", "colorHue": 99, "colorSaturation": 73, "scaleModifier": -37, "children": [{"itemID": "item_arena_pistol", "colorHue": 88, "colorSaturation": 76, "scaleModifier": -85}]}, {"itemID": "item_heart_gun", "colorHue": 55, "colorSaturation": -32, "scaleModifier": -14, "children": [{"itemID": "item_arena_pistol", "colorHue": 205, "colorSaturation": 56, "scaleModifier": 109}]}]}]}, {"itemID": "item_heart_gun", "colorHue": 169, "colorSaturation": -90, "scaleModifier": -107, "children": [{"itemID": "item_backpack_large_base", "colorHue": 216, "colorSaturation": 111, "scaleModifier": -127, "children": [{"itemID": "item_heart_gun", "colorHue": 67, "colorSaturation": -87, "scaleModifier": 50, "children": [{"itemID": "item_arena_shotgun", "colorHue": 148, "colorSaturation": -123, "scaleModifier": 99}]}, {"itemID": "item_heart_gun", "colorHue": 12, "colorSaturation": 38, "scaleModifier": 81, "children": [{"itemID": "item_arena_shotgun", "colorHue": 133, "colorSaturation": -54, "scaleModifier": 102}]}, {"itemID": "item_heart_gun", "colorHue": 198, "colorSaturation": 34, "scaleModifier": 125, "children": [{"itemID": "item_arena_shotgun", "colorHue": 211, "colorSaturation": -27, "scaleModifier": 120}]}, {"itemID": "item_heart_gun", "colorHue": 152, "colorSaturation": 36, "scaleModifier": 67, "children": [{"itemID": "item_arena_shotgun", "colorHue": 102, "colorSaturation": 59, "scaleModifier": 46}]}, {"itemID": "item_heart_gun", "colorHue": 202, "colorSaturation": -7, "scaleModifier": -27, "children": [{"itemID": "item_arena_shotgun", "colorHue": 227, "colorSaturation": 93, "scaleModifier": 19}]}, {"itemID": "item_heart_gun", "colorHue": 10, "colorSaturation": 51, "scaleModifier": -30, "children": [{"itemID": "item_arena_shotgun", "colorHue": 231, "colorSaturation": -75, "scaleModifier": 3}]}, {"itemID": "item_heart_gun", "colorHue": 162, "colorSaturation": -106, "scaleModifier": 68, "children": [{"itemID": "item_arena_shotgun", "colorHue": 222, "colorSaturation": 87, "scaleModifier": 37}]}, {"itemID": "item_heart_gun", "colorHue": 108, "colorSaturation": -68, "scaleModifier": 42, "children": [{"itemID": "item_arena_shotgun", "colorHue": 120, "colorSaturation": 120, "scaleModifier": -61}]}, {"itemID": "item_heart_gun", "colorHue": 191, "colorSaturation": -30, "scaleModifier": -87, "children": [{"itemID": "item_arena_shotgun", "colorHue": 143, "colorSaturation": -103, "scaleModifier": 95}]}, {"itemID": "item_heart_gun", "colorHue": 2, "colorSaturation": 1, "scaleModifier": -116, "children": [{"itemID": "item_arena_shotgun", "colorHue": 83, "colorSaturation": 103, "scaleModifier": 69}]}, {"itemID": "item_heart_gun", "colorHue": 182, "colorSaturation": -112, "scaleModifier": 37, "children": [{"itemID": "item_arena_shotgun", "colorHue": 231, "colorSaturation": 40, "scaleModifier": 79}]}, {"itemID": "item_heart_gun", "colorHue": 231, "colorSaturation": 18, "scaleModifier": 40, "children": [{"itemID": "item_arena_shotgun", "colorHue": 187, "colorSaturation": -31, "scaleModifier": 54}]}, {"itemID": "item_heart_gun", "colorHue": 169, "colorSaturation": -55, "scaleModifier": 17, "children": [{"itemID": "item_arena_shotgun", "colorHue": 205, "colorSaturation": -60, "scaleModifier": -55}]}, {"itemID": "item_heart_gun", "colorHue": 27, "colorSaturation": -84, "scaleModifier": -114, "children": [{"itemID": "item_arena_shotgun", "colorHue": 104, "colorSaturation": -33, "scaleModifier": -52}]}, {"itemID": "item_heart_gun", "colorHue": 33, "colorSaturation": -38, "scaleModifier": -101, "children": [{"itemID": "item_arena_shotgun", "colorHue": 168, "colorSaturation": 8, "scaleModifier": -40}]}, {"itemID": "item_heart_gun", "colorHue": 157, "colorSaturation": -102, "scaleModifier": -79, "children": [{"itemID": "item_arena_shotgun", "colorHue": 79, "colorSaturation": -49, "scaleModifier": -66}]}, {"itemID": "item_heart_gun", "colorHue": 24, "colorSaturation": -108, "scaleModifier": -16, "children": [{"itemID": "item_arena_shotgun", "colorHue": 181, "colorSaturation": -95, "scaleModifier": 115}]}, {"itemID": "item_heart_gun", "colorHue": 16, "colorSaturation": -112, "scaleModifier": 45, "children": [{"itemID": "item_arena_shotgun", "colorHue": 41, "colorSaturation": 110, "scaleModifier": 74}]}, {"itemID": "item_heart_gun", "colorHue": 22, "colorSaturation": -64, "scaleModifier": 94, "children": [{"itemID": "item_arena_shotgun", "colorHue": 213, "colorSaturation": 118, "scaleModifier": 59}]}, {"itemID": "item_heart_gun", "colorHue": 30, "colorSaturation": -51, "scaleModifier": -36, "children": [{"itemID": "item_arena_shotgun", "colorHue": 190, "colorSaturation": 1, "scaleModifier": -51}]}, {"itemID": "item_heart_gun", "colorHue": 121, "colorSaturation": -89, "scaleModifier": -109, "children": [{"itemID": "item_arena_shotgun", "colorHue": 142, "colorSaturation": 76, "scaleModifier": -30}]}, {"itemID": "item_heart_gun", "colorHue": 181, "colorSaturation": -116, "scaleModifier": 85, "children": [{"itemID": "item_arena_shotgun", "colorHue": 185, "colorSaturation": -92, "scaleModifier": 70}]}, {"itemID": "item_heart_gun", "colorHue": 145, "colorSaturation": 27, "scaleModifier": -26, "children": [{"itemID": "item_arena_shotgun", "colorHue": 173, "colorSaturation": 22, "scaleModifier": -40}]}]}]}, {"itemID": "item_heart_gun", "colorHue": 142, "colorSaturation": -94, "scaleModifier": 108, "children": [{"itemID": "item_backpack_large_base", "colorHue": 122, "colorSaturation": 48, "scaleModifier": 111, "children": [{"itemID": "item_heart_gun", "colorHue": 236, "colorSaturation": -110, "scaleModifier": -110, "children": [{"itemID": "item_arena_pistol", "colorHue": 157, "colorSaturation": 10, "scaleModifier": -100}]}, {"itemID": "item_heart_gun", "colorHue": 179, "colorSaturation": 68, "scaleModifier": 66, "children": [{"itemID": "item_arena_pistol", "colorHue": 71, "colorSaturation": -69, "scaleModifier": -71}]}, {"itemID": "item_heart_gun", "colorHue": 111, "colorSaturation": -105, "scaleModifier": 21, "children": [{"itemID": "item_arena_pistol", "colorHue": 99, "colorSaturation": -46, "scaleModifier": -89}]}, {"itemID": "item_heart_gun", "colorHue": 213, "colorSaturation": 2, "scaleModifier": -120, "children": [{"itemID": "item_arena_pistol", "colorHue": 87, "colorSaturation": -23, "scaleModifier": -65}]}, {"itemID": "item_heart_gun", "colorHue": 86, "colorSaturation": -59, "scaleModifier": -27, "children": [{"itemID": "item_arena_pistol", "colorHue": 41, "colorSaturation": -99, "scaleModifier": -88}]}, {"itemID": "item_heart_gun", "colorHue": 224, "colorSaturation": 107, "scaleModifier": 4, "children": [{"itemID": "item_arena_pistol", "colorHue": 78, "colorSaturation": -39, "scaleModifier": 103}]}, {"itemID": "item_heart_gun", "colorHue": 129, "colorSaturation": -16, "scaleModifier": 103, "children": [{"itemID": "item_arena_pistol", "colorHue": 76, "colorSaturation": 77, "scaleModifier": 59}]}, {"itemID": "item_heart_gun", "colorHue": 168, "colorSaturation": 7, "scaleModifier": -74, "children": [{"itemID": "item_arena_pistol", "colorHue": 109, "colorSaturation": 42, "scaleModifier": 93}]}, {"itemID": "item_heart_gun", "colorHue": 21, "colorSaturation": 50, "scaleModifier": 17, "children": [{"itemID": "item_arena_pistol", "colorHue": 126, "colorSaturation": -23, "scaleModifier": -35}]}, {"itemID": "item_heart_gun", "colorHue": 81, "colorSaturation": -37, "scaleModifier": -88, "children": [{"itemID": "item_arena_pistol", "colorHue": 150, "colorSaturation": 117, "scaleModifier": 44}]}, {"itemID": "item_heart_gun", "colorHue": 143, "colorSaturation": 4, "scaleModifier": -106, "children": [{"itemID": "item_arena_pistol", "colorHue": 195, "colorSaturation": 26, "scaleModifier": -75}]}, {"itemID": "item_heart_gun", "colorHue": 152, "colorSaturation": 9, "scaleModifier": -41, "children": [{"itemID": "item_arena_pistol", "colorHue": 193, "colorSaturation": -46, "scaleModifier": 66}]}, {"itemID": "item_heart_gun", "colorHue": 236, "colorSaturation": -55, "scaleModifier": -19, "children": [{"itemID": "item_arena_pistol", "colorHue": 57, "colorSaturation": 85, "scaleModifier": -108}]}, {"itemID": "item_heart_gun", "colorHue": 102, "colorSaturation": -68, "scaleModifier": 113, "children": [{"itemID": "item_arena_pistol", "colorHue": 53, "colorSaturation": 4, "scaleModifier": -109}]}, {"itemID": "item_heart_gun", "colorHue": 61, "colorSaturation": 3, "scaleModifier": 115, "children": [{"itemID": "item_arena_pistol", "colorHue": 193, "colorSaturation": 118, "scaleModifier": 31}]}, {"itemID": "item_heart_gun", "colorHue": 185, "colorSaturation": 88, "scaleModifier": -25, "children": [{"itemID": "item_arena_pistol", "colorHue": 101, "colorSaturation": 2, "scaleModifier": -50}]}, {"itemID": "item_heart_gun", "colorHue": 23, "colorSaturation": 53, "scaleModifier": 84, "children": [{"itemID": "item_arena_pistol", "colorHue": 47, "colorSaturation": -55, "scaleModifier": -98}]}, {"itemID": "item_heart_gun", "colorHue": 35, "colorSaturation": 86, "scaleModifier": -28, "children": [{"itemID": "item_arena_pistol", "colorHue": 173, "colorSaturation": 1, "scaleModifier": 83}]}, {"itemID": "item_heart_gun", "colorHue": 20, "colorSaturation": 96, "scaleModifier": -49, "children": [{"itemID": "item_arena_pistol", "colorHue": 42, "colorSaturation": -93, "scaleModifier": -113}]}, {"itemID": "item_heart_gun", "colorHue": 56, "colorSaturation": 35, "scaleModifier": -14, "children": [{"itemID": "item_arena_pistol", "colorHue": 137, "colorSaturation": 102, "scaleModifier": -56}]}, {"itemID": "item_heart_gun", "colorHue": 203, "colorSaturation": -38, "scaleModifier": -7, "children": [{"itemID": "item_arena_pistol", "colorHue": 65, "colorSaturation": 49, "scaleModifier": 105}]}, {"itemID": "item_heart_gun", "colorHue": 130, "colorSaturation": 11, "scaleModifier": 35, "children": [{"itemID": "item_arena_pistol", "colorHue": 71, "colorSaturation": 97, "scaleModifier": 53}]}, {"itemID": "item_heart_gun", "colorHue": 2, "colorSaturation": 68, "scaleModifier": 119, "children": [{"itemID": "item_arena_pistol", "colorHue": 41, "colorSaturation": 50, "scaleModifier": -13}]}]}]}], "stashPos": 0}], "version": 1}','version':'8e192e752405b279447f0523a9049fdd','permission_read':1,'permission_write':1,'create_time':'2025-02-20T00:51:38Z','update_time':'2025-04-05T10:03:13Z'},{'collection':'user_inventory','key':'gameplay_loadout','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"version": 1}','version':'77efb8e3fa276d4674932392a66555e4','permission_read':1,'permission_write':1,'create_time':'2025-02-20T00:51:50Z','update_time':'2025-04-05T21:06:17Z'},{'collection':'user_preferences','key':'gameplay_items','user_id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','value':'{"recents": ["item_backpack_small_base", "item_flaregun", "item_tele_grenade", "item_glowstick", "item_jetpack", "item_stick_bone", "item_dynamite_cube", "item_tablet", "item_plunger", "item_flashlight_mega"], "favorites": ["item_flaregun"]}','version':'80aae98f75aab68ca6540247a17cc4a1','permission_read':1,'permission_write':1,'create_time':'2025-02-20T00:52:27Z','update_time':'2025-04-05T21:04:05Z'}]}
-W={'user':{'id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','username':'ERROR','lang_tag':'en','metadata':'{}','edge_count':4,'create_time':'2024-08-24T07:30:12Z','update_time':'2025-04-05T21:00:27Z'},'wallet':'{"stashCols": 4, "stashRows": 2, "hardCurrency": 30000000, "softCurrency": 20000000, "researchPoints": 500000}','custom_id':'26344644298513663'}
-X={'token':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI3OGU0NDBiOS00NWZjLTRhODYtOTllMy02ZGM5Y2RjN2M1N2UiLCJ1aWQiOiJmM2E1NjE4YS1hMzNmLTQyMDAtYThiYS1lYjM3YzdiZmJmOWMiLCJ1c24iOiJ4ZW5pdHl5dCIsInZycyI6eyJhdXRoSUQiOiJkYTEzZjU4YzJiMjU0ZTgwYTM5YzA3YzRlNzkyNjlmOSIsImNsaWVudFVzZXJBZ2VudCI6Ik1ldGFRdWVzdCAxLjE2LjMuMTEzOF81ZWRjYmQ5OCIsImRldmljZUlEIjoiMTcyZjZjMmU3MWE5NGMwMTBjMWY2Mjk5OWJjM2QzMjEiLCJsb2dpblR5cGUiOiJtZXRhX3F1ZXN0In0sImV4cCI6MTc0NDA2MzQwNiwiaWF0IjoxNzQzOTk0MzE4fQ.nRJLbep6nCGeBTwruOunyNjDUiLxfcvpAJHl7E6n3m8','refresh_token':'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0aWQiOiI3OGU0NDBiOS00NWZjLTRhODYtOTllMy02ZGM5Y2RjN2M1N2UiLCJ1aWQiOiJmM2E1NjE4YS1hMzNmLTQyMDAtYThiYS1lYjM3YzdiZmJmOWMiLCJ1c24iOiJ4ZW5pdHl5dCIsInZycyI6eyJhdXRoSUQiOiJkYTEzZjU4YzJiMjU0ZTgwYTM5YzA3YzRlNzkyNjlmOSIsImNsaWVudFVzZXJBZ2VudCI6Ik1ldGFRdWVzdCAxLjE2LjMuMTEzOF81ZWRjYmQ5OCIsImRldmljZUlEIjoiMTcyZjZjMmU3MWE5NGMwMTBjMWY2Mjk5OWJjM2QzMjEiLCJsb2dpblR5cGUiOiJtZXRhX3F1ZXN0In0sImV4cCI6MTc0NDE0NjIwNiwiaWF0IjoxNzQzOTk0MzE4fQ.f7nTHNnPrJW6oYYo54RDks1iDvntTP2yiBfpHdH-ygQ'}
-@B.route('/v2/account/authenticate/custom',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def k():T();return A(V()if R else X)
-@B.route('/v2/account1',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def l():return A(W)
-@B.route('/v2/rpc/purchase.avatarItems',methods=['POST'])
-def m():return A({'payload':''})
-@B.route('/v2/rpc/avatar.update',methods=['POST'])
-def n():return A({'payload':''})
-@B.route('/v2/rpc/purchase.gameplayItems',methods=['POST'])
-def o():return A({'payload':''})
-@B.route('/game-data-prod.zip')
-def p():
-	client_ip=C.remote_addr;E(f"Request from IP: {client_ip}")
-	if J(client_ip):file_name='Zombie.zip'
-	else:file_name='Zombie.zip'
-	file_path=os.path.join('/home/XeraCompany/mysite',file_name)
-	if not os.path.exists(file_path):E(f"File not found: {file_path}");return'File not found',404
-	file_size=os.path.getsize(file_path);E(f"Serving {file_name}, size: {file_size} bytes")
-	try:return Z(file_path,mimetype='application/zip',as_attachment=False,download_name=file_name,max_age=3600)
-	except G as e:E(f"Error serving file: {e}");return f"Error: {M(e)}",500
-@B.route('/v2/account',methods=['GET','PUT'])
-def q():
-	if C.method=='PUT':response=A({});response.headers['Cache-Control']='no-store, no-cache, must-revalidate';response.headers['Content-Type']='application/json';response.headers['Grpc-Metadata-Content-Type']='application/grpc';return response
-	try:
-		ip=f();user,banned=g(ip)
-		if banned or user is None:E(f"[ERROR] User banned or None - IP: {ip}, banned: {banned}, user: {user}");raise G('User is banned or DB failed')
-		username='XERA COMPANY'
-		if J(ip):username='ALEX [HELPER]'
-		return A({'user':{'id':'2e8aace0-282d-4c3d-b9d4-6a3b3ba2c2a6','username':username,'lang_tag':'en','metadata':D.dumps({'isDeveloper':M(J(ip))}),'edge_count':4,'create_time':'2024-08-24T07:30:12Z','update_time':'2025-04-05T21:00:27Z'},'wallet':'{"stashCols": 16, "stashRows": 8, "hardCurrency": 0, "softCurrency": 20000000, "researchPoints": 69420}','custom_id':user['custom_id']})
-	except G as e:E(f"[FALLBACK] DB failed or user banned: {e}");import traceback;traceback.print_exc();return A(W)
-@B.route('/v2/account/alt2',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def r():return A(K)
-@B.route('/v2/account/link/device',methods=['POST'])
-def s():return A({'id':F.token_hex(16),'user_id':'13b8dce4-2c8e-4945-90b6-19af0c2b0ad7','linked':True,'create_time':'2025-01-15T18:08:45Z'})
-@B.route('/v2/account/session/refresh',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def t():return A(V()if R else X)
-@B.route('/v2/rpc/attest.start',methods=['POST'])
-def u():return A({'payload':D.dumps({'status':'success','attestResult':'Valid','message':'Attestation validated'})})
-@B.route('/v2/storage',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def v():
-	if C.method=='POST':
-		try:
-			data=C.get_json(force=True)
-			if data and'object_ids'in data:
-				user_id=data['object_ids'][0].get('user_id')if data['object_ids']else None
-				if user_id:
-					response_objects=[]
-					for obj in K['objects']:
-						new_obj=obj.copy();new_obj['user_id']=user_id
-						if obj.get('key')=='gameplay_loadout':payload=T();new_obj['value']=payload['objects'][0]['value']
-						response_objects.append(new_obj)
-					return A({'objects':response_objects})
-				else:return A({'objects':[]})
-			else:return A({'objects':[]})
-		except G as e:E(f"Storage error: {e}");return A({'objects':[]})
-	return A(K)
-@B.route('/v2/storage/econ_gameplay_items',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def w():return A(h)
-@B.route('/v2/rpc/mining.balance',methods=['GET'])
-def x():response_body={'payload':D.dumps({'hardCurrency':20000000,'researchPoints':999999})};return A(response_body),200
-@B.route('/v2/rpc/purchase.list',methods=['GET'])
-def y():response_body={'payload':D.dumps({'purchases':[{'user_id':'13b8dce4-2c8e-4945-90b6-19af0c2b0ad7','product_id':'RESEARCH_PACK','transaction_id':'540282689176766','store':3,'purchase_time':{'seconds':1741450711},'create_time':{'seconds':1741450837,'nanos':694669000},'update_time':{'seconds':1741450837,'nanos':694669000},'refund_time':{},'provider_response':D.dumps({'success':True}),'environment':2},{'user_id':'13b8dce4-2c8e-4945-90b6-19af0c2b0ad7','product_id':'G.O.A.T_BUNDLE','transaction_id':'540281232510245','store':3,'purchase_time':{'seconds':1741450591},'create_time':{'seconds':1741450722,'nanos':851245000},'update_time':{'seconds':1741450722,'nanos':851245000},'refund_time':{},'provider_response':D.dumps({'success':True}),'environment':2}]})};return A(response_body),200
-@B.route('/v2/rpc/clientBootstrap',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def z():return A(e)
-@B.route('/auth',methods=['GET','POST'])
-def A0():
-	auth_token=C.args.get('auth_token');E('🔐 Photon Auth Request Received')
-	if auth_token:E(f"auth_token: {auth_token}");message='Authentication successful'
-	else:E('⚠️ No auth_token provided');message='Authenticated without token'
-	fake_user_id=F.token_hex(16);fake_session_id=F.token_hex(12);return A({'ResultCode':1,'Message':message,'UserId':fake_user_id,'SessionID':fake_session_id,'Authenticated':True}),200
-Y='https://discord.com/api/webhooksxxxxx'
-@B.route('/debug',methods=['GET','POST','PUT','DELETE','PATCH','OPTIONS'])
-def A1():
-	method=C.method;url=C.url;headers=L(C.headers);body=C.get_data(as_text=True);message={'content':'📡 **/debug request received**','embeds':[{'title':'Request Info','fields':[{'name':'Method','value':method,'inline':True},{'name':'URL','value':url,'inline':False},{'name':'Headers','value':f"```json\n{D.dumps(headers,indent=2)}```",'inline':False},{'name':'Body','value':f"```json\n{body}```"if body else'*(empty)*','inline':False}],'color':65484}]}
-	try:N.post(Y,json=message)
-	except G as e:return f"Failed to send to Discord: {e}",500
-	return'Sent debug to discord',200
-A2=B
-if __name__=='__main__':B.run(debug=False)
+def start_admin_gui():
+    root = tk.Tk()
+    AdminGUI(root)
+    root.mainloop()
+
+
+# Start GUI in background thread so Flask still runs normally
+gui_thread = threading.Thread(target=start_admin_gui, daemon=True)
+gui_thread.start()
+
+
+if __name__ == '__main__':
+    app.run(debug=False)
